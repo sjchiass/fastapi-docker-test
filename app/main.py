@@ -37,7 +37,7 @@ metadata.create_all(engine)
 class NoteIn(BaseModel):
     sensor: str
     reading: float
-    create_date: datetime = datetime.now()
+    create_date: datetime = Field(default_factory=datetime.now)
 
 class Note(BaseModel):
     id: int
