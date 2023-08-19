@@ -1,81 +1,72 @@
 # app/main.py
-
+import sqlite3
+sqlite3.connect("/sqlite/test.db")
 from datetime import datetime
-from fastapi import FastAPI, Query
-from app.db import database, User
 
-import pandas as pd
-import json
+from typing import List, Optional
 
-app = FastAPI(title="Data Logger")
+import databases
+import sqlalchemy
+from fastapi import FastAPI
+from pydantic import BaseModel, Field
+
+# SQLAlchemy specific code, as with any other app
+DATABASE_URL = "sqlite:////sqlite/test.db"
+# DATABASE_URL = "postgresql://user:password@postgresserver/db"
+
+database = databases.Database(DATABASE_URL)
+
+metadata = sqlalchemy.MetaData()
+
+notes = sqlalchemy.Table(
+    "notes",
+    metadata,
+    sqlalchemy.Column("id", sqlalchemy.Integer, primary_key=True),
+    sqlalchemy.Column("create_date", sqlalchemy.DateTime),
+    sqlalchemy.Column("sensor", sqlalchemy.String),
+    sqlalchemy.Column("reading", sqlalchemy.Float),
+)
 
 
-@app.get("/")
-async def read_root():
-    return await User.objects.all()
+engine = sqlalchemy.create_engine(
+    DATABASE_URL, connect_args={"check_same_thread": False}
+)
+metadata.create_all(engine)
+
+
+class NoteIn(BaseModel):
+    sensor: str
+    reading: float
+    create_date: datetime = datetime.now()
+
+class Note(BaseModel):
+    id: int
+    sensor: str
+    reading: float
+    create_date: datetime
+
+
+app = FastAPI()
 
 
 @app.on_event("startup")
 async def startup():
-    if not database.is_connected:
-        await database.connect()
-    # create a dummy entry
-    await User.objects.get_or_create(email="test@test.com")
-    query = """CREATE TABLE IF NOT EXISTS sensors (id SERIAL PRIMARY KEY, name VARCHAR(100), variable VARCHAR(100), value FLOAT, datetime TIMESTAMPTZ, auto_datetime BOOLEAN, transaction_time TIMESTAMPTZ)"""
-    await database.execute(query=query)
+    await database.connect()
 
 
 @app.on_event("shutdown")
 async def shutdown():
-    if database.is_connected:
-        await database.disconnect()
+    await database.disconnect()
 
-@app.get("/log/temperature")
-async def log_temp(name: str, value: float, dt: str = None):
-    # Insert some data.
-    if dt:
-        dt = datetime.fromisoformat(dt)
-        auto_datetime = False
-    else:
-        auto_datetime = True
-        dt = datetime.now()
-    query = "INSERT INTO sensors(name, variable, value, datetime, auto_datetime, transaction_time) VALUES (:name, :variable, :value, :datetime, :auto_datetime, :transaction_time)"
-    values = [
-        {"name": name, "variable": "temperature",
-        "value": value, "datetime": dt,
-        "auto_datetime": auto_datetime, "transaction_time": datetime.now()}
-    ]
-    await database.execute_many(query=query, values=values)
 
-@app.get("/log/humidity")
-async def log_temp(name: str, value: float, dt: str = None):
-    # Insert some data.
-    if dt:
-        dt = datetime.fromisoformat(dt)
-        auto_datetime = False
-    else:
-        auto_datetime = True
-        dt = datetime.now()
-    query = "INSERT INTO sensors(name, variable, value, datetime, auto_datetime, transaction_time) VALUES (:name, :variable, :value, :datetime, :auto_datetime, :transaction_time)"
-    values = [
-        {"name": name, "variable": "humidity",
-        "value": value, "datetime": dt,
-        "auto_datetime": auto_datetime, "transaction_time": datetime.now()}
-    ]
-    await database.execute_many(query=query, values=values)
+@app.get("/notes/", response_model=List[Note])
+async def read_notes():
+    query = notes.select()
+    return await database.fetch_all(query)
 
-@app.get("/dump")
-async def dump():
-    query = "SELECT * FROM public.sensors"
-    rows = await database.fetch_all(query=query)
-    df = pd.DataFrame([{k:v for k, v in zip(list(row), tuple(row.values()))} for row in rows])
-    df.datetime = df.datetime.apply(lambda x: x.isoformat())
-    df.transaction_time = df.transaction_time.apply(lambda x: x.isoformat())
-    res = df.to_json(orient="records")
-    parsed = json.loads(res)
-    return parsed
 
-@app.get("/drop")
-async def drop():
-    query = "DROP TABLE public.sensors"
-    await database.execute(query=query)
+@app.post("/notes/", response_model=Note)
+async def create_note(note: NoteIn):
+    query = notes.insert().values(create_date=note.create_date, sensor=note.sensor, reading=note.reading)
+    last_record_id = await database.execute(query)
+    return {**note.dict(), "id": last_record_id}
