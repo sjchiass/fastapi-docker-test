@@ -25,9 +25,10 @@ notes = sqlalchemy.Table(
     sqlalchemy.Column("create_date", sqlalchemy.DateTime),
     sqlalchemy.Column("location", sqlalchemy.String),
     sqlalchemy.Column("sensor", sqlalchemy.String),
-    sqlalchemy.Column("reading", sqlalchemy.Float),
+    sqlalchemy.Column("measurand", sqlalchemy.String),
+    sqlalchemy.Column("units", sqlalchemy.String),
+    sqlalchemy.Column("value", sqlalchemy.Float),
     sqlalchemy.Column("uptime", sqlalchemy.Integer),
-
 )
 
 
@@ -40,7 +41,9 @@ metadata.create_all(engine)
 class NoteIn(BaseModel):
     location: str
     sensor: str
-    reading: float
+    measurand: str
+    units: str
+    value: float
     uptime: int
     create_date: datetime = Field(default_factory=datetime.now)
 
@@ -48,7 +51,9 @@ class Note(BaseModel):
     id: int
     location: str
     sensor: str
-    reading: float
+    measurand: str
+    units: str
+    value: float
     uptime: int
     create_date: datetime
 
@@ -74,6 +79,13 @@ async def read_notes():
 
 @app.post("/notes/", response_model=Note)
 async def create_note(note: NoteIn):
-    query = notes.insert().values(create_date=note.create_date, location=note.location, sensor=note.sensor, reading=note.reading, uptime=note.uptime)
+    query = notes.insert().values(create_date=note.create_date,
+                                  location=note.location,
+                                  sensor=note.sensor,
+                                  measurand=note.measurand,
+                                  units=note.units,
+                                  value=note.value,
+                                  uptime=note.uptime)
     last_record_id = await database.execute(query)
     return {**note.dict(), "id": last_record_id}
+
