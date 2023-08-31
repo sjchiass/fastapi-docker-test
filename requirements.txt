@@ -3,4 +3,5 @@ uvicorn
 databases
 sqlalchemy
 aiosqlite
+pandas
 

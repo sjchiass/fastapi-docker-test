@@ -1,14 +1,17 @@
 # app/main.py
 import sqlite3
 sqlite3.connect("/sqlite/test.db")
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from typing import List, Optional
 
 import databases
 import sqlalchemy
 from fastapi import FastAPI
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
+
+import pandas as pd
 
 # SQLAlchemy specific code, as with any other app
 DATABASE_URL = "sqlite:////sqlite/test.db"
@@ -28,7 +31,8 @@ notes = sqlalchemy.Table(
     sqlalchemy.Column("measurand", sqlalchemy.String),
     sqlalchemy.Column("units", sqlalchemy.String),
     sqlalchemy.Column("value", sqlalchemy.Float),
-    sqlalchemy.Column("uptime", sqlalchemy.Integer),
+    sqlalchemy.Column("uptime_at_measure", sqlalchemy.Integer),
+    sqlalchemy.Column("uptime_at_transmit", sqlalchemy.Integer),
 )
 
 
@@ -44,7 +48,8 @@ class NoteIn(BaseModel):
     measurand: str
     units: str
     value: float
-    uptime: int
+    uptime_at_measure: int
+    uptime_at_transmit: int
     create_date: datetime = Field(default_factory=datetime.now)
 
 class Note(BaseModel):
@@ -54,7 +59,8 @@ class Note(BaseModel):
     measurand: str
     units: str
     value: float
-    uptime: int
+    uptime_at_measure: int
+    uptime_at_transmit: int
     create_date: datetime
 
 
@@ -71,6 +77,19 @@ async def shutdown():
     await database.disconnect()
 
 
+@app.get("/report/", response_class=HTMLResponse)
+async def report():
+    query = notes.select()
+    results = await database.fetch_all(query)
+    df = pd.DataFrame(results)
+    # Measurement stats
+    first_dt = df["create_date"].min()
+    latest_dt = df["create_date"].max()
+    last_24h = df[df["create_date"] >= latest_dt-timedelta(hours=24)].groupby(["location", "sensor", "measurand", "units"]).value.describe().to_html()
+    all_time = df.groupby(["location", "sensor", "measurand", "units"]).value.describe().to_html()
+    return f"<h1>Last 24 hours</h1><h3>Latest measurement {latest_dt}</h3>{last_24h}<h1>All time</h1><h3>Since {first_dt}</h3>{all_time}"
+
+
 @app.get("/notes/", response_model=List[Note])
 async def read_notes():
     query = notes.select()
@@ -85,7 +104,8 @@ async def create_note(note: NoteIn):
                                   measurand=note.measurand,
                                   units=note.units,
                                   value=note.value,
-                                  uptime=note.uptime)
+                                  uptime_at_measure=note.uptime_at_measure,
+                                  uptime_at_transmit=note.uptime_at_transmit)
     last_record_id = await database.execute(query)
     return {**note.dict(), "id": last_record_id}
 
