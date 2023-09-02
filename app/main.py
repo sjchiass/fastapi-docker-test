@@ -79,15 +79,38 @@ async def shutdown():
 
 @app.get("/report/", response_class=HTMLResponse)
 async def report():
+    # Set numeric precision
+    pd.set_option("display.precision", 2)
     query = notes.select()
     results = await database.fetch_all(query)
     df = pd.DataFrame(results)
+    # Localize datetime
+    df["create_date"] = pd.to_datetime(df["create_date"], utc=True).dt.tz_convert("America/Toronto")
     # Measurement stats
     first_dt = df["create_date"].min()
     latest_dt = df["create_date"].max()
     last_24h = df[df["create_date"] >= latest_dt-timedelta(hours=24)].groupby(["location", "sensor", "measurand", "units"]).value.describe().to_html()
+    last_24h_per_hour = (df
+                         [df["create_date"] >= latest_dt-timedelta(hours=24)]
+                         .groupby(["location", "sensor", "measurand", "units", df.create_date.dt.round("1h")])
+                         .value
+                         .mean()
+                         .reset_index()
+                         .rename(columns={"create_date" : "hour"})
+                         .pivot(index=["location", "sensor", "measurand", "units"], columns="hour", values="value")
+                         .to_html()
+                         )
     all_time = df.groupby(["location", "sensor", "measurand", "units"]).value.describe().to_html()
-    return f"<h1>Last 24 hours</h1><h3>Latest measurement {latest_dt}</h3>{last_24h}<h1>All time</h1><h3>Since {first_dt}</h3>{all_time}"
+    all_time_per_hour = (df
+                         .groupby(["location", "sensor", "measurand", "units", df.create_date.dt.hour])
+                         .value
+                         .mean()
+                         .reset_index()
+                         .rename(columns={"create_date" : "hour"})
+                         .pivot(index=["location", "sensor", "measurand", "units"], columns="hour", values="value")
+                         .to_html()
+                         )
+    return f"<h1>Last 24 hours</h1><h3>Latest measurement {latest_dt}</h3>{last_24h}<br>{last_24h_per_hour}<h1>All time</h1><h3>Since {first_dt}</h3>{all_time}<br>{all_time_per_hour}"
 
 
 @app.get("/notes/", response_model=List[Note])
