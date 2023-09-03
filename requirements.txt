@@ -4,4 +4,5 @@ databases
 sqlalchemy
 aiosqlite
 pandas
+matplotlib
 
