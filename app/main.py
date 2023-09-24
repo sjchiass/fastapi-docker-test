@@ -15,6 +15,8 @@ import pandas as pd
 import io
 import matplotlib.pyplot as plt
 
+import metpy
+
 # SQLAlchemy specific code, as with any other app
 DATABASE_URL = "sqlite:////sqlite/test.db"
 # DATABASE_URL = "postgresql://user:password@postgresserver/db"
@@ -119,24 +121,56 @@ async def report():
              .sort_values(["location", "sensor", "measurand", "units"])
             )
     links["time series graph"] = links.apply(lambda df: f"<a href='./time_series_graph?location={df.location}&sensor={df.sensor}&measurand={df.measurand}&units={df.units}'>link</a>", axis=1)
+    links["time series graph, 7d"] = links.apply(lambda df: f"<a href='./time_series_graph?location={df.location}&sensor={df.sensor}&measurand={df.measurand}&units={df.units}&last_days=7'>link</a>", axis=1)
     links["hourly range graph"] = links.apply(lambda df: f"<a href='./hourly_range_graph?location={df.location}&sensor={df.sensor}&measurand={df.measurand}&units={df.units}'>link</a>", axis=1)
-    links = links.set_index(["location", "sensor", "measurand", "units"])[["time series graph", "hourly range graph"]]
-    return f"<h1>Last 24 hours</h1><h3>Latest measurement {latest_dt}</h3>{last_24h}<br>{last_24h_per_hour}<h1>All time</h1><h3>Since {first_dt}</h3>{all_time}<br>{all_time_per_hour}<h1>Graphs</h1>{links.to_html(render_links=True, escape=False)}"
+    links = links.set_index(["location", "sensor", "measurand", "units"])[["time series graph", "time series graph, 7d", "hourly range graph"]]
+    # Attempt a table of common measurands
+    multi_measurands = (df
+             [["location", "sensor", "measurand", "units"]]
+             .drop_duplicates()
+             .sort_values(["location", "sensor", "measurand", "units"])
+             .groupby(["measurand", "units"])
+             .count()
+             .reset_index()
+             .loc[lambda df: (df.location > 1) & (df.location > 1)]
+             [["measurand", "units"]]
+            )
+    multi_measurands["time series graph"] = multi_measurands.apply(lambda df: f"<a href='./time_series_graph?measurand={df.measurand}&units={df.units}'>link</a>", axis=1)
+    multi_measurands["time series graph, 7d"] = multi_measurands.apply(lambda df: f"<a href='./time_series_graph?measurand={df.measurand}&units={df.units}&last_days=7'>link</a>", axis=1)
+    multi_measurands = multi_measurands.set_index(["measurand", "units"])[["time series graph", "time series graph, 7d"]]
+    return f"<h1>Last 24 hours</h1><h3>Latest measurement {latest_dt}</h3>{last_24h}<br>{last_24h_per_hour}<h1>All time</h1><h3>Since {first_dt}</h3>{all_time}<br>{all_time_per_hour}<h1>Graphs</h1>{links.to_html(render_links=True, escape=False)}<h3>Combined</h3>{multi_measurands.to_html(render_links=True, escape=False)}"
 
 @app.get("/report/time_series_graph", responses = {200: {"content": {"image/png": {}}}}, response_class=Response)
-async def time_series_graph(location: str, sensor: str, measurand: str, units:str):
+async def time_series_graph(measurand: str, units:str, location: str | None = None, sensor: str | None = None, last_days: int | None = None):
     query = notes.select()
     results = await database.fetch_all(query)
     df = pd.DataFrame(results)
     # Localize datetime
     df["create_date"] = pd.to_datetime(df["create_date"], utc=True).dt.tz_convert("America/Toronto")
-    # Filter for specific sensor readings
-    filtered = (df
-            .loc[(df.location == location) & (df.sensor == sensor) & (df.measurand == measurand) & (df.units == units)]
-           )
-    # A simple standard time series plot
-    plt.plot(filtered.create_date, filtered.value)
-    plt.title(f"{measurand.title()} from {sensor} in {location}")
+    if timedelta is not Note:
+        latest_dt = df["create_date"].max()
+        df = df.loc[df["create_date"] >= latest_dt-timedelta(days=last_days)]
+    if location is None and sensor is None:
+        # Filter for specific sensor readings
+        filtered = (df
+                .loc[(df.measurand == measurand) & (df.units == units)]
+            )
+        filtered["identifier"] = filtered.apply(lambda df: f"{df['location']}, {df['sensor']}", axis=1)
+        for identifier in filtered.identifier.drop_duplicates().values:
+            # A simple standard time series plot
+            plt.plot(filtered.loc[filtered.identifier == identifier].create_date,
+                filtered.loc[filtered.identifier == identifier].value,
+                label=identifier)
+        plt.title(f"{measurand.title()}")
+        plt.legend()
+    else:
+        # Filter for specific sensor readings
+        filtered = (df
+                .loc[(df.location == location) & (df.sensor == sensor) & (df.measurand == measurand) & (df.units == units)]
+            )
+        # A simple standard time series plot
+        plt.plot(filtered.create_date, filtered.value)
+        plt.title(f"{measurand.title()} from {sensor} in {location}")
     plt.xlabel("Time")
     # Use this method to auto-format the x axis for dates
     plt.gcf().autofmt_xdate()
