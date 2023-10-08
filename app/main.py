@@ -202,7 +202,7 @@ async def time_series_graph(measurand: str, units:str, location: str | None = No
     return Response(content=image, media_type="image/png")
 
 @app.get("/report/hourly_range_graph", responses = {200: {"content": {"image/png": {}}}}, response_class=Response)
-async def hourly_range_graph(location: str, sensor: str, measurand: str, units:str):
+async def hourly_range_graph(location: str, sensor: str, measurand: str, units: str):
     query = notes.select()
     results = await database.fetch_all(query)
     df = pd.DataFrame(results)
@@ -260,6 +260,35 @@ async def read_notes():
     query = notes.select()
     return await database.fetch_all(query)
 
+# https://docs.sqlalchemy.org/en/20/tutorial/data_select.html#the-select-sql-expression-construct
+@app.get("/distinct/")
+async def distinct():
+    query = sqlalchemy.sql.select(notes.c.location, notes.c.sensor, notes.c.measurand, notes.c.units).distinct()
+    return await database.fetch_all(query)
+
+@app.get("/filter/")
+async def filter(
+    location: str | None = None,
+    sensor: str | None = None,
+    measurand: str | None = None,
+    units: str | None = None,
+    datetime_le: datetime | None = None,
+    datetime_ge: datetime | None = None):
+    query = notes.select()
+    if location:
+        query = query.where(notes.c.location == location)
+    if sensor:
+        query = query.where(notes.c.sensor == sensor)
+    if measurand:
+        query = query.where(notes.c.measurand == measurand)
+    if units:
+        query = query.where(notes.c.units == units)
+    if datetime_ge:
+        query = query.where(notes.c.create_date >= datetime_ge)
+    if datetime_le:
+        query = query.where(notes.c.create_date <= datetime_le)
+
+    return await database.fetch_all(query)
 
 @app.post("/notes/", response_model=Note)
 async def create_note(note: NoteIn):
