@@ -5,5 +5,4 @@ sqlalchemy
 aiosqlite
 pandas
 matplotlib
-metpy
 

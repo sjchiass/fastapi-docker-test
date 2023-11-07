@@ -15,8 +15,6 @@ import pandas as pd
 import io
 import matplotlib.pyplot as plt
 
-import metpy
-
 # SQLAlchemy specific code, as with any other app
 DATABASE_URL = "sqlite:////sqlite/test.db"
 # DATABASE_URL = "postgresql://user:password@postgresserver/db"
