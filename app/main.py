@@ -89,7 +89,7 @@ async def report():
     results = await database.fetch_all(query)
     df = pd.DataFrame(results)
     # Localize datetime
-    df["create_date"] = pd.to_datetime(df["create_date"], utc=True).dt.tz_convert("America/Toronto")
+    df["create_date"] = pd.to_datetime(df["create_date"], utc=True).dt.tz_localize("America/Toronto", ambiguous="infer")
     # Measurement stats
     first_dt = df["create_date"].min()
     latest_dt = df["create_date"].max()
@@ -146,7 +146,7 @@ async def time_series_graph(measurand: str, units:str, location: str | None = No
     results = await database.fetch_all(query)
     df = pd.DataFrame(results)
     # Localize datetime
-    df["create_date"] = pd.to_datetime(df["create_date"], utc=True).dt.tz_convert("America/Toronto")
+    df["create_date"] = pd.to_datetime(df["create_date"], utc=True).dt.tz_localize("America/Toronto", ambiguous="infer")
     if last_days is not None:
         latest_dt = df["create_date"].max()
         df = df.loc[df["create_date"] >= latest_dt-timedelta(days=last_days)]
@@ -207,7 +207,7 @@ async def hourly_range_graph(location: str, sensor: str, measurand: str, units: 
     results = await database.fetch_all(query)
     df = pd.DataFrame(results)
     # Localize datetime
-    df["create_date"] = pd.to_datetime(df["create_date"], utc=True).dt.tz_convert("America/Toronto")
+    df["create_date"] = pd.to_datetime(df["create_date"], utc=True).dt.tz_localize("America/Toronto", ambiguous="infer")
     # Filter for specific sensor readings
     filtered = (df
             .loc[(df.location == location) & (df.sensor == sensor) & (df.measurand == measurand) & (df.units == units)]
