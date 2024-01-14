@@ -11,4 +11,5 @@ services:
       - ./sqlite_data:/sqlite
     ports:
       - 8008:8000
+    restart: unless-stopped
 
